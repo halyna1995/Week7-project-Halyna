@@ -1,118 +1,259 @@
-# Week 7 Project: [Your Project Name]
+# Week 7 Project: Family Budget Data Pipeline
 
 ## What it does
 
-<!-- Describe your pipeline in 1-2 sentences. What data does it fetch? Where does it store the results? -->
+Processes messy fictional family budget CSV file containing income and expense
+records. The pipeline cleans the data, validates records with Pydantic, converts UAH
+amounts to EUR, creates monthly category summaries with pandas, and stores the results
+in Azure Postgres and Azure Blob Storage.
 
 ## Architecture
 
 ```text
-[Your API] ──► pipeline.py ──► Pydantic validation ──► Postgres INSERT (your schema)
-                                                     ──► Blob Storage (raw JSON)
+Local CSV or Azure Blob CSV
+ ↓
+pipeline.py
+ ↓
+pandas cleaning
+ ↓
+Pydantic validation
+ ↓
+exchange-rate enrichment
+ ↓
+Azure Postgres + Azure Blob Storage
 ```
 
-## Run locally
+## Data source
 
-```bash
-# 1. Populate .env from Azure Key Vault
-cp .env.example .env
-echo "POSTGRES_URL=$(az keyvault secret show --vault-name kv-hyf-data --name postgres-url --query value -o tsv)" >> .env
-echo "AZURE_STORAGE_CONNECTION_STRING=$(az keyvault secret show --vault-name kv-hyf-data --name storage-connection-string --query value -o tsv)" >> .env
-# Set your personal schema (replace alice with your GitHub handle):
-echo "DB_SCHEMA=dev_alice" >> .env
+The input file is a messy CSV file:
+data/family_budget_messy_input_halyna.csv
 
-# 2. Install dependencies
-uv sync
+It contains fictional family budget transactions with:
 
-# 3. Run directly (without Docker)
-uv run python -m src.pipeline
+- income records, such as salary, pension, transport refund, and parents support;
+- expense records, such as food, nanny, clothes/shoes, medical insurance, rent,
+  transport, gifts, health, bike repair, and home repair;
+- different date formats;
+- inconsistent category names;
+- inconsistent amount formats;
+- EUR and UAH currencies.
 
-# 4. Or build and run with Docker
-docker build -t my-pipeline .
-docker run --env-file .env my-pipeline
-```
+## Main transformations
+
+The pipeline performs the following steps:
+
+1. Reads the CSV file from local storage or Azure Blob Storage.
+2. Cleans messy values with pandas and helper functions.
+3. Normalizes categories, currencies, payment methods, dates, and amounts.
+4. Validates cleaned records with the BudgetTransaction Pydantic model.
+5. Converts UAH amounts to EUR using an exchange rate.
+6. Creates a monthly category summary.
+7. Saves cleaned transactions and summaries locally.
+8. Optionally writes results to Azure Postgres and Azure Blob Storage.
+
+### Outputs
+
+## Local output
+
+When the pipeline runs, it creates:
+data/output/cleaned_budget_transactions.csv
+data/output/monthly_category_summary.csv
+
+These files are generated output and are not committed to Git.
+
+## Azure Postgres output
+
+The pipeline writes to two tables in the personal schema:
+dev_halyna.budget_transactions
+dev_halyna.monthly_category_summary
+
+## Azure Blob Storage output
+
+The pipeline uploads CSV outputs to Blob Storage:
+budget/cleaned/
+budget/summary/
+
+The input CSV can also be uploaded to:
+budget/input/family_budget_messy_input_halyna.csv
+
+## Environment variables
+
+Create a local .env file from .env.example:
+
+Copy-Item .env.example .env
+
+Then fill in the real values in .env.
+
+Example .env.example:
+
+INPUT_MODE=local
+INPUT_CSV_PATH=data/family_budget_messy_input_halyna.csv
+INPUT_BLOB_NAME=budget/input/family_budget_messy_input_halyna.csv
+
+SAVE_TO_AZURE=false
+LOG_LEVEL=INFO
+
+POSTGRES_URL=
+DB_SCHEMA=dev_halyna
+
+AZURE_STORAGE_CONNECTION_STRING=
+AZURE_STORAGE_CONTAINER=raw
+
+EXCHANGE_RATE_UAH_TO_EUR=0.0215
+
+Important:
+
+- .env.example is committed to GitHub.
+- .env is local only and must not be committed.
+- Do not commit real connection strings, passwords, or Azure secrets.
+
+## Run locally without Azure writes
+
+Use this mode to test cleaning, validation, transformation, and local output files.
+
+In .env set:
+
+INPUT_MODE=local
+SAVE_TO_AZURE=false
+
+Run:
+
+python -m src.pipeline
+
+Expected result:
+
+Loaded 50 raw rows
+Validated 44 / 50 records
+Found 6 invalid records
+Transformed 44 rows
+Created 20 summary rows
+Saved cleaned transactions to data/output/
+Saved monthly summary to data/output/
+Pipeline finished
+
+## Run locally with Azure Postgres and Blob Storage
+
+Use this mode after filling in real Azure values in .env.
+
+In .env set:
+
+INPUT_MODE=local
+SAVE_TO_AZURE=true
+
+Run:
+
+python -m src.pipeline
+
+Expected result:
+
+Inserted 44 rows into dev_halyna.budget_transactions
+Inserted 20 rows into dev_halyna.monthly_category_summary
+Uploaded DataFrame to blob: budget/cleaned/...
+Uploaded DataFrame to blob: budget/summary/...
+Azure storage step completed
+Pipeline finished
+
+## Run with input CSV from Azure Blob Storage
+
+First upload the input CSV to Blob Storage:
+
+Container: raw
+Blob name: budget/input/family_budget_messy_input_halyna.csv
+
+Then set in .env:
+
+INPUT_MODE=blob
+SAVE_TO_AZURE=true
+INPUT_BLOB_NAME=budget/input/family_budget_messy_input_halyna.csv
+
+Run:
+
+python -m src.pipeline
+
+The pipeline should download the CSV from Blob Storage, process it,
+write rows to Postgres, and upload output files back to Blob Storage.
 
 ## Run tests
 
-```bash
+python -m pytest tests/ -v
+
+The tests check that the Pydantic model:
+
+- accepts a valid budget transaction;
+- rejects negative amounts;
+- rejects invalid transaction types;
+- rejects unknown categories;
+- rejects unsupported currencies;
+- rejects invalid payment methods;
+- rejects invalid dates.
+
+## Format and lint
+
+python -m ruff format src/ tests/
+python -m ruff check src/ tests/
+
+If uv is available, the same commands can be run as:
 uv run pytest tests/ -v
+uv run ruff format src/ tests/
+uv run ruff check src/ tests/
+uv run python -m src.pipeline
+
+## Verify Postgres results
+
+In DBeaver or another Postgres client, run:
+
+```sql
+SELECT COUNT(_) FROM dev_halyna.budget_transactions;
+SELECT COUNT(_) FROM dev_halyna.monthly_category_summary;
 ```
 
-## Deploy to Azure
+Expected result after one successful run:
+budget_transactions: 44 rows
+monthly_category_summary: 20 rows
 
-```bash
-# Build for linux/amd64 (required by Azure Container Apps) and push to ACR
-docker build --platform linux/amd64 -t hyfregistry.azurecr.io/my-pipeline:latest .
-docker push hyfregistry.azurecr.io/my-pipeline:latest
+To inspect data:
 
-# Create Container App Job (runs daily at 06:00 UTC)
-az containerapp job create \
-  --name my-pipeline-job \
-  --resource-group rg-hyf-data \
-  --environment env-hyf-data \
-  --image hyfregistry.azurecr.io/my-pipeline:latest \
-  --registry-server hyfregistry.azurecr.io \
-  --trigger-type Schedule \
-  --cron-expression "0 6 * * *" \
-  --replica-timeout 300 \
-  --replica-retry-limit 0 \
-  --env-vars \
-    POSTGRES_URL="$(az keyvault secret show --vault-name kv-hyf-data --name postgres-url --query value -o tsv)" \
-    AZURE_STORAGE_CONNECTION_STRING="$(az keyvault secret show --vault-name kv-hyf-data --name storage-connection-string --query value -o tsv)" \
-    DB_SCHEMA=dev_alice \
-    LOG_LEVEL=INFO
-
-# Trigger a manual run for testing (without waiting for the schedule)
-az containerapp job start --name my-pipeline-job --resource-group rg-hyf-data
+```sql
+SELECT _ FROM dev_halyna.budget_transactions LIMIT 10;
+SELECT _ FROM dev_halyna.monthly_category_summary LIMIT 10;
 ```
 
-## Enable ACR push from CI (optional)
+## Verify Blob Storage results
 
-The `push-to-acr` job in `.github/workflows/ci.yml` is commented out by default.
-To enable it, add two secrets in your repo's **Settings → Secrets and variables → Actions**:
+In Azure Portal:
 
-| Secret name | Value |
-|-------------|-------|
-| `ACR_USERNAME` | `hyfregistry` |
-| `ACR_PASSWORD` | Ask your teacher for the ACR password |
+Storage Account
+→ Containers
+→ raw
+→ budget
 
-Then uncomment the `push-to-acr` job in `ci.yml`. Every push to `main` will build
-and push the image automatically.
+Expected folders:
+budget/input/
+budget/cleaned/
+budget/summary/
 
-## Install psql
+The output files should look like:
+budget/cleaned/YYYY-MM-DD_HHMMSS_cleaned_budget_transactions.csv
+budget/summary/YYYY-MM-DD_HHMMSS_monthly_category_summary.csv
 
-`psql` is the Postgres command-line client used to verify results. Install it once:
+## Current project status
 
-**macOS**
-```bash
-brew install libpq
-echo 'export PATH="/opt/homebrew/opt/libpq/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-```
+Implemented:
 
-**Linux (Debian/Ubuntu)**
-```bash
-sudo apt-get install -y postgresql-client
-```
+- messy family budget CSV input;
+- pandas cleaning;
+- Pydantic validation;
+- UAH to EUR conversion;
+- monthly category summary;
+- local CSV output;
+- Postgres storage;
+- Blob Storage upload;
+- optional Blob input mode;
+- pytest model tests.
 
-**Windows**
-Download and run the installer from [postgresql.org/download/windows](https://www.postgresql.org/download/windows/). The installer includes `psql`. After installing, open a new terminal and verify with `psql --version`.
+Next step:
 
-## Verify results
-
-```bash
-# Check job execution
-az containerapp job execution list --name my-pipeline-job --resource-group rg-hyf-data --output table
-
-# Check Postgres (replace dev_alice with your schema, <your_table> with your table name)
-psql "$POSTGRES_URL" -c "SELECT COUNT(*) FROM dev_alice.<your_table>;"
-
-# Check Blob Storage
-az storage blob list --account-name hyfstoragedev --container-name raw --prefix pipeline/ --output table
-```
-
-## Clean up
-
-```bash
-az containerapp job delete --name my-pipeline-job --resource-group rg-hyf-data --yes
-```
+- Docker build;
+- push image to Azure Container Registry;
+- create Azure Container App Job;
+- configure scheduled run.

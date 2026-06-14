@@ -12,7 +12,13 @@ from dotenv import load_dotenv
 from pydantic import ValidationError
 
 from src.models import BudgetTransaction
-# from src.storage import insert_readings, upload_raw_json
+from src.storage import (
+    download_csv_from_blob,
+    insert_budget_transactions,
+    insert_monthly_summary,
+    upload_dataframe_to_blob,
+    make_timestamped_blob_name,
+)
 
 load_dotenv()
 
@@ -78,6 +84,11 @@ PAYMENT_METHOD = {
     "cash": "cash",
     "bank transfer": "bank_transfer",
 }
+
+
+def env_flag(name: str, default: str = "false") -> bool:
+    """Read true/false value from environment variable."""
+    return os.getenv(name, default).lower() == "true"
 
 
 def clean_text(value) -> str:
@@ -159,18 +170,30 @@ def clean_date(value):
 
 
 def fetch_data() -> list[dict]:
-    """Read messy family budget data from a CSV file."""
-    input_path = Path(
-        os.getenv("INPUT_CSV_PATH", "data/family_budget_messy_input_halyna.csv")
-    )
+    """Read messy family budget data from a CSV file or Azure Blob.."""
+    input_mode = os.getenv("INPUT_MODE", "local").lower()
 
-    if not input_path.exists():
-        log.error("CSV file not found: %s", input_path)
-        sys.exit(1)
+    if input_mode == "blob":
+        blob_name = os.environ["INPUT_BLOB_NAME"]
+        return download_csv_from_blob(blob_name)
 
-    df = pd.read_csv(input_path)
-    log.info("Loaded %d raw rows from %s", len(df), input_path)
-    return df
+    if input_mode == "local":
+        input_path = Path(
+            os.getenv(
+                "INPUT_CSV_PATH",
+                "data/family_budget_messy_input_halyna.csv",
+            )
+        )
+
+        if not input_path.exists():
+            log.error("CSV file not found: %s", input_path)
+            sys.exit(1)
+
+        df = pd.read_csv(input_path)
+        log.info("Loaded %d raw rows from %s", len(df), input_path)
+        return df
+
+    raise ValueError(f"Unsupported INPUT_MODE: {input_mode}")
 
 
 def clean_record(row: pd.Series) -> dict:
@@ -309,6 +332,24 @@ def save_local_output(df: pd.DataFrame, summary: pd.DataFrame) -> None:
     log.info("Saved monthly summary to data/output/")
 
 
+def save_to_azure(df: pd.DataFrame, summary: pd.DataFrame) -> None:
+    """Save transformed data to Postgres and Azure Blob Storage."""
+    insert_budget_transactions(df)
+    insert_monthly_summary(summary)
+
+    transactions_blob_name = make_timestamped_blob_name(
+        "budget/cleaned",
+        "cleaned_budget_transactions.csv",
+    )
+    summary_blob_name = make_timestamped_blob_name(
+        "budget/summary",
+        "monthly_category_summary.csv",
+    )
+
+    upload_dataframe_to_blob(df, transactions_blob_name)
+    upload_dataframe_to_blob(summary, summary_blob_name)
+
+
 def run():
     """Run the full pipeline: fetch -> validate -> transform -> store."""
     log.info("Pipeline starting")
@@ -325,14 +366,20 @@ def run():
 
     save_local_output(df, summary)
 
+    if env_flag("SAVE_TO_AZURE"):
+        save_to_azure(df, summary)
+        log.info("Azure storage step completed")
+    else:
+        log.info("SAVE_TO_AZURE=false, skipping Postgres and Blob Storage")
+
     log.info("Pipeline finished: %d records stored", len(df))
 
 
 if __name__ == "__main__":
     # Fail fast if required env vars are missing
-    # for var in ["POSTGRES_URL", "AZURE_STORAGE_CONNECTION_STRING"]:
-    #   if var not in os.environ:
-    #      log.error("Missing required environment variable: %s", var)
-    #     sys.exit(1)
+    for var in ["POSTGRES_URL", "AZURE_STORAGE_CONNECTION_STRING"]:
+        if var not in os.environ:
+            log.error("Missing required environment variable: %s", var)
+            sys.exit(1)
 
     run()
