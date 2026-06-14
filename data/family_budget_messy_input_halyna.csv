@@ -1,0 +1,51 @@
+transaction_id,date,type,category,amount,currency,payment_method,description,notes
+T001,2026-06-01,Income,husband salary,3000.00,EUR,bank_transfer,Monthly salary,
+T002,01/06/2026,income, pension ,"3000,00",UAH,bank_transfer,Monthly pension,amount uses comma decimal and category has spaces
+T003,2026/06/05,INCOME,transport refund,300,eur,bank transfer,Work travel reimbursement,lowercase currency and payment method with space
+T004,June 10 2026,income,parents support,"5000,00",uah,cash,Support from parents,"UAH income, lowercase currency"
+T005,2026-06-01,expense,Groceries,"€95,40",EUR,card,Albert Heijn groceries,euro symbol and comma decimal
+T006,02/06/2026,Expense, products ,72.15,eur,Card,Lidl shopping,spaces and uppercase payment method
+T007,2026/06/04,EXPENSE,FOOD,"110,20",EUR,card,Weekly groceries,uppercase type and category
+T008,June 6 2026,expense,groceries,48.50,EUR,cash,Market groceries,text date format
+T009,07-06-2026,expense,food,€83.90,€,card,Supermarket,currency as symbol
+T010,2026-06-09,expense,products,"69,75",EUR,card,Groceries,comma decimal
+T011,10/06/2026,expense, Groceries ,130.00,EUR,card,Large family shopping,category has spaces
+T012,2026/06/13,expense,food,58.40,eur,cash,Fruit and vegetables,
+T013,2026-06-18,Expense,products,"92,10",EUR,card,Weekly groceries,
+T014,21/06/2026,expense,FOOD,77.30,EUR,card,Supermarket,
+T015,2026-06-02,expense,Transport,120.00,EUR,card,Train subscription,
+T016,05/06/2026,expense,public transport,"45,00",EUR,card,Train tickets,category synonym
+T017,2026/06/08,expense, transport ,36.50,eur,card,Bus tickets,category spaces
+T018,2026-06-14,Expense,train,25.00,EUR,card,Extra train trip,category synonym
+T019,20-06-2026,expense,Transport,"49,50",EUR,card,Weekend travel,comma decimal
+T020,2026-06-25,expense,bus,24.00,EUR,cash,Bus tickets,category synonym
+T021,2026-06-03,expense,Nanny,150.00,EUR,cash,Childcare payment,
+T022,10/06/2026,Expense,childcare,"150,00",EUR,cash,Childcare payment,category synonym and comma decimal
+T023,2026/06/17,expense,babysitter,150.00,eur,cash,Childcare payment,category synonym
+T024,June 24 2026,expense, nanny ,150.00,EUR,cash,Childcare payment,category spaces
+T025,2026-06-01,expense,medical insurance,400.00,EUR,bank_transfer,Monthly health insurance,category synonym
+T026,01/06/2026,expense,Rent,400.00,EUR,bank transfer,House rent,payment method with space
+T027,2026-06-07,expense,bike,35.00,EUR,card,Bike light and lock,category synonym
+T028,18/06/2026,expense,bike repair,"65,00",EUR,card,Bike repair,comma decimal
+T029,2026-06-11,expense,clothes,60.00,EUR,card,Children clothes,
+T030,2026/06/19,expense,shoes,"40,00",EUR,card,Shoes,category synonym
+T031,2026-06-12,expense,Health,28.90,EUR,card,Medicine,
+T032,23/06/2026,expense,medical,"71,10",EUR,card,Doctor-related expense,category synonym
+T033,2026-06-15,expense,gift,35.00,EUR,card,Birthday gift,category synonym
+T034,2026/06/27,expense,Gifts,"65,00",EUR,cash,Family gift,comma decimal
+T035,2026-06-16,expense,home repair,50.00,EUR,card,Small house repair materials,
+T036,2026-06-20,expense,gifts,"1500,00",UAH,card,Gift bought from Ukrainian shop,UAH expense
+T037,2026-06-22,expense,health,900.00,UAH,card,Medicine from Ukraine,UAH expense
+T038,2026-06-26,expense,clothes,"2200,00",UAH,card,Clothes from Ukrainian shop,UAH expense
+T039,2026-06-28,expense,food,-25.00,EUR,card,Wrong negative value,invalid: negative amount
+T040,2026-06-29,expense,transport,,EUR,card,Missing amount example,invalid: missing amount
+T041,not-a-date,expense,food,30.00,EUR,card,Invalid date example,invalid: date
+T042,2026-06-30,expense,random category,12.00,EUR,card,Unknown category example,invalid: unknown category
+T043,30/06/2026,expense,gifts,free,EUR,cash,Invalid amount text,invalid: amount text
+T044,2026-06-30,unknown,food,20.00,EUR,card,Unknown transaction type,invalid: type
+T045,2026-07-01,income,husband salary,3000.00,EUR,bank_transfer,Monthly salary,
+T046,01/07/2026,income,pension,"3000,00",UAH,bank_transfer,Monthly pension,
+T047,2026-07-01,expense,rent,400.00,EUR,bank_transfer,House rent,
+T048,2026-07-01,expense,health insurance,400.00,EUR,bank_transfer,Monthly health insurance,
+T049,2026-07-03,expense,Groceries,"85,30",EUR,card,Groceries,
+T050,2026-07-04,expense,nanny,150.00,EUR,cash,Childcare payment,
