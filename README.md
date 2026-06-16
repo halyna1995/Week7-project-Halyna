@@ -2,25 +2,28 @@
 
 ## What it does
 
-Processes messy fictional family budget CSV file containing income and expense
-records. The pipeline cleans the data, validates records with Pydantic, converts UAH
-amounts to EUR, creates monthly category summaries with pandas, and stores the results
-in Azure Postgres and Azure Blob Storage.
+This project processes a messy fictional family budget CSV file containing income and expense records. The pipeline cleans the data, validates records with Pydantic, converts UAH amounts to EUR, creates monthly category summaries with pandas, and stores the results in Azure Postgres and Azure Blob Storage.
 
 ## Architecture
 
 ```text
 Local CSV or Azure Blob CSV
- ↓
+        ↓
 pipeline.py
- ↓
+        ↓
 pandas cleaning
- ↓
+        ↓
 Pydantic validation
- ↓
+        ↓
 exchange-rate enrichment
- ↓
-Azure Postgres + Azure Blob Storage
+        ↓
+Azure Postgres
+        ↓
+Azure Blob Storage
+        ↓
+Docker image
+        ↓
+Azure Container App Job
 ```
 
 ## Data source
@@ -31,12 +34,15 @@ data/family_budget_messy_input_halyna.csv
 It contains fictional family budget transactions with:
 
 - income records, such as salary, pension, transport refund, and parents support;
-- expense records, such as food, nanny, clothes/shoes, medical insurance, rent,
-  transport, gifts, health, bike repair, and home repair;
+- expense records, such as food, nanny, clothes/shoes, medical insurance, rent, transport, gifts, health, bike repair, and home repair;
 - different date formats;
 - inconsistent category names;
 - inconsistent amount formats;
 - EUR and UAH currencies.
+
+The same input CSV can also be uploaded to Azure Blob Storage:
+Container: raw
+Blob name: budget/input/family_budget_messy_input_halyna.csv
 
 ## Main transformations
 
@@ -47,9 +53,10 @@ The pipeline performs the following steps:
 3. Normalizes categories, currencies, payment methods, dates, and amounts.
 4. Validates cleaned records with the BudgetTransaction Pydantic model.
 5. Converts UAH amounts to EUR using an exchange rate.
-6. Creates a monthly category summary.
+6. Creates a monthly category summary with pandas.
 7. Saves cleaned transactions and summaries locally.
-8. Optionally writes results to Azure Postgres and Azure Blob Storage.
+8. Writes cleaned transactions and summaries to Azure Postgres.
+9. Uploads cleaned and summary CSV files to Azure Blob Storage.
 
 ### Outputs
 
@@ -106,6 +113,7 @@ Important:
 - .env.example is committed to GitHub.
 - .env is local only and must not be committed.
 - Do not commit real connection strings, passwords, or Azure secrets.
+- Do not use export in .env when running with Docker.
 
 ## Run locally without Azure writes
 
@@ -117,7 +125,6 @@ INPUT_MODE=local
 SAVE_TO_AZURE=false
 
 Run:
-
 python -m src.pipeline
 
 Expected result:
@@ -141,7 +148,6 @@ INPUT_MODE=local
 SAVE_TO_AZURE=true
 
 Run:
-
 python -m src.pipeline
 
 Expected result:
@@ -156,7 +162,6 @@ Pipeline finished
 ## Run with input CSV from Azure Blob Storage
 
 First upload the input CSV to Blob Storage:
-
 Container: raw
 Blob name: budget/input/family_budget_messy_input_halyna.csv
 
@@ -167,7 +172,6 @@ SAVE_TO_AZURE=true
 INPUT_BLOB_NAME=budget/input/family_budget_messy_input_halyna.csv
 
 Run:
-
 python -m src.pipeline
 
 The pipeline should download the CSV from Blob Storage, process it,
@@ -197,6 +201,106 @@ uv run pytest tests/ -v
 uv run ruff format src/ tests/
 uv run ruff check src/ tests/
 uv run python -m src.pipeline
+
+## Docker
+
+Build the Docker image locally:
+docker build -t family-budget-pipeline .
+
+Run the container with environment variables from .env:
+docker run --rm --env-file .env family-budget-pipeline
+
+For Docker runs, the recommended input mode is Blob input:
+
+INPUT_MODE=blob
+INPUT_BLOB_NAME=budget/input/family_budget_messy_input_halyna.csv
+SAVE_TO_AZURE=true
+
+The Docker run was verified successfully. The container reads the input CSV from Azure Blob Storage, processes 44 valid records, writes data to Azure Postgres, and uploads output CSV files to Azure Blob Storage.
+
+## Docker image for Azure
+
+The image is tagged for Azure Container Registry as:
+hyfregistry.azurecr.io/halyna-family-budget-pipeline:1.0
+
+Build the image for Azure:
+docker build --platform linux/amd64 -t hyfregistry.azurecr.io/halyna-family-budget-pipeline:1.0 .
+
+Push the image to Azure Container Registry:
+docker push hyfregistry.azurecr.io/halyna-family-budget-pipeline:1.0
+
+## Azure Container App Job
+
+The pipeline is deployed as an Azure Container App Job.
+
+Job name:
+halyna-budget-pipeline-job
+
+Resource group:
+rg-hyf-data
+
+Container Apps environment:
+env-hyf-data
+
+Image:
+hyfregistry.azurecr.io/halyna-family-budget-pipeline:1.0
+
+Schedule:
+`0 6 * * *`
+This means the job is scheduled to run daily at 06:00 UTC.
+
+## Create the job
+
+Real secret values must not be committed to GitHub. In PowerShell, load them from the local .env file before creating the job:
+
+```powershell
+$postgresUrl = (Get-Content .env | Where-Object { $_ -like "POSTGRES_URL=*" }).Substring("POSTGRES_URL=".Length).Trim('"')
+$storageConn = (Get-Content .env | Where-Object { $_ -like "AZURE_STORAGE_CONNECTION_STRING=*" }).Substring("AZURE_STORAGE_CONNECTION_STRING=".Length).Trim('"')
+```
+
+Create the job:
+
+```powershell
+az containerapp job create `
+  --name halyna-budget-pipeline-job `
+  --resource-group rg-hyf-data `
+  --environment env-hyf-data `
+  --image hyfregistry.azurecr.io/halyna-family-budget-pipeline:1.0 `
+  --registry-server hyfregistry.azurecr.io `
+  --trigger-type Schedule `
+  --cron-expression "0 6 * * *" `
+  --replica-timeout 300 `
+  --replica-retry-limit 0 `
+  --env-vars `
+    POSTGRES_URL="$postgresUrl" `
+    AZURE_STORAGE_CONNECTION_STRING="$storageConn" `
+    DB_SCHEMA=dev_halyna `
+    AZURE_STORAGE_CONTAINER=raw `
+    INPUT_MODE=blob `
+    INPUT_BLOB_NAME=budget/input/family_budget_messy_input_halyna.csv `
+    SAVE_TO_AZURE=true `
+    LOG_LEVEL=INFO
+```
+
+## Start the job
+
+```powershell
+az containerapp job start `
+  --name halyna-budget-pipeline-job `
+  --resource-group rg-hyf-data
+```
+
+## Verify job execution
+
+```powershell
+az containerapp job execution list `
+  --name halyna-budget-pipeline-job `
+  --resource-group rg-hyf-data `
+  --output table
+```
+
+A successful run should show status:
+Succeeded
 
 ## Verify Postgres results
 
@@ -236,6 +340,8 @@ The output files should look like:
 budget/cleaned/YYYY-MM-DD_HHMMSS_cleaned_budget_transactions.csv
 budget/summary/YYYY-MM-DD_HHMMSS_monthly_category_summary.csv
 
+The cleaned and summary files were verified in Azure Blob Storage after a successful Docker run.
+
 ## Current project status
 
 Implemented:
@@ -249,11 +355,9 @@ Implemented:
 - Postgres storage;
 - Blob Storage upload;
 - optional Blob input mode;
+- Docker image build;
+- Docker container run with .env;
+- Azure Container Registry image push;
+- Azure Container App Job setup;
+- manual job execution verification;
 - pytest model tests.
-
-Next step:
-
-- Docker build;
-- push image to Azure Container Registry;
-- create Azure Container App Job;
-- configure scheduled run.
