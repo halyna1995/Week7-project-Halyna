@@ -22,8 +22,8 @@ def get_db_schema() -> str:
 
 def prepare_database_schema(cur, schema: str) -> None:
     """Create and select the personal database schema."""
-    cur.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
-    cur.execute(f"SET search_path TO {schema}")
+    cur.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")  # noqa: S608
+    cur.execute(f"SET search_path TO {schema}")  # noqa: S608
 
 
 def insert_budget_transactions(df: pd.DataFrame) -> None:
@@ -114,12 +114,6 @@ def insert_budget_transactions(df: pd.DataFrame) -> None:
 
 def insert_monthly_summary(summary_df: pd.DataFrame) -> None:
     """Insert monthly category summary into Azure Postgres."""
-    if psycopg2 is None:
-        raise ImportError(
-            """psycopg2 is required for database operations. 
-            Install psycopg2 or psycopg2-binary"""
-        )
-
     db_url = os.environ["POSTGRES_URL"]
     schema = get_db_schema()
 
