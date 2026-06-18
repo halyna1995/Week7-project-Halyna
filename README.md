@@ -87,7 +87,9 @@ budget/input/family_budget_messy_input_halyna.csv
 
 Create a local .env file from .env.example:
 
-Copy-Item .env.example .env
+```bash
+cp .env.example .env
+```
 
 Then fill in the real values in .env.
 
@@ -113,7 +115,6 @@ Important:
 - .env.example is committed to GitHub.
 - .env is local only and must not be committed.
 - Do not commit real connection strings, passwords, or Azure secrets.
-- Do not use export in .env when running with Docker.
 
 ## Run locally without Azure writes
 
@@ -220,14 +221,18 @@ The Docker run was verified successfully. The container reads the input CSV from
 
 ## Docker image for Azure
 
-The image is tagged for Azure Container Registry as:
-hyfregistry.azurecr.io/halyna-family-budget-pipeline:1.0
+Build and tag the image for Azure Container Registry:
 
-Build the image for Azure:
-docker build --platform linux/amd64 -t hyfregistry.azurecr.io/halyna-family-budget-pipeline:1.0 .
+```bash
+docker build --platform linux/amd64 \
+  -t hyfregistry.azurecr.io/halyna-family-budget-pipeline:latest .
+```
 
-Push the image to Azure Container Registry:
-docker push hyfregistry.azurecr.io/halyna-family-budget-pipeline:1.0
+Push the image:
+
+```bash
+docker push hyfregistry.azurecr.io/halyna-family-budget-pipeline:latest
+```
 
 ## Azure Container App Job
 
@@ -243,7 +248,7 @@ Container Apps environment:
 env-hyf-data
 
 Image:
-hyfregistry.azurecr.io/halyna-family-budget-pipeline:1.0
+hyfregistry.azurecr.io/halyna-family-budget-pipeline:latest
 
 Schedule:
 `0 6 * * *`
@@ -251,51 +256,51 @@ This means the job is scheduled to run daily at 06:00 UTC.
 
 ## Create the job
 
-Real secret values must not be committed to GitHub. In PowerShell, load them from the local .env file before creating the job:
+Load credentials from your local .env file:
 
-```powershell
-$postgresUrl = (Get-Content .env | Where-Object { $_ -like "POSTGRES_URL=*" }).Substring("POSTGRES_URL=".Length).Trim('"')
-$storageConn = (Get-Content .env | Where-Object { $_ -like "AZURE_STORAGE_CONNECTION_STRING=*" }).Substring("AZURE_STORAGE_CONNECTION_STRING=".Length).Trim('"')
+```bash
+POSTGRES_URL=$(grep ^POSTGRES_URL= .env | cut -d= -f2-)
+AZURE_STORAGE_CONNECTION_STRING=$(grep ^AZURE_STORAGE_CONNECTION_STRING= .env | cut -d= -f2-)
 ```
 
 Create the job:
 
-```powershell
-az containerapp job create `
-  --name halyna-budget-pipeline-job `
-  --resource-group rg-hyf-data `
-  --environment env-hyf-data `
-  --image hyfregistry.azurecr.io/halyna-family-budget-pipeline:1.0 `
-  --registry-server hyfregistry.azurecr.io `
-  --trigger-type Schedule `
-  --cron-expression "0 6 * * *" `
-  --replica-timeout 300 `
-  --replica-retry-limit 0 `
-  --env-vars `
-    POSTGRES_URL="$postgresUrl" `
-    AZURE_STORAGE_CONNECTION_STRING="$storageConn" `
-    DB_SCHEMA=dev_halyna `
-    AZURE_STORAGE_CONTAINER=raw `
-    INPUT_MODE=blob `
-    INPUT_BLOB_NAME=budget/input/family_budget_messy_input_halyna.csv `
-    SAVE_TO_AZURE=true `
+```bash
+az containerapp job create \
+  --name halyna-budget-pipeline-job \
+  --resource-group rg-hyf-data \
+  --environment env-hyf-data \
+  --image hyfregistry.azurecr.io/halyna-family-budget-pipeline:latest \
+  --registry-server hyfregistry.azurecr.io \
+  --trigger-type Schedule \
+  --cron-expression "0 6 * * *" \
+  --replica-timeout 300 \
+  --replica-retry-limit 0 \
+  --env-vars \
+    POSTGRES_URL="$POSTGRES_URL" \
+    AZURE_STORAGE_CONNECTION_STRING="$AZURE_STORAGE_CONNECTION_STRING" \
+    DB_SCHEMA=dev_halyna \
+    AZURE_STORAGE_CONTAINER=raw \
+    INPUT_MODE=blob \
+    INPUT_BLOB_NAME=budget/input/family_budget_messy_input_halyna.csv \
+    SAVE_TO_AZURE=true \
     LOG_LEVEL=INFO
 ```
 
 ## Start the job
 
-```powershell
-az containerapp job start `
-  --name halyna-budget-pipeline-job `
+```bash
+az containerapp job start \
+  --name halyna-budget-pipeline-job \
   --resource-group rg-hyf-data
 ```
 
 ## Verify job execution
 
-```powershell
-az containerapp job execution list `
-  --name halyna-budget-pipeline-job `
-  --resource-group rg-hyf-data `
+```bash
+az containerapp job execution list \
+  --name halyna-budget-pipeline-job \
+  --resource-group rg-hyf-data \
   --output table
 ```
 
@@ -307,8 +312,8 @@ Succeeded
 In DBeaver or another Postgres client, run:
 
 ```sql
-SELECT COUNT(_) FROM dev_halyna.budget_transactions;
-SELECT COUNT(_) FROM dev_halyna.monthly_category_summary;
+SELECT COUNT(*) FROM dev_halyna.budget_transactions;
+SELECT COUNT(*) FROM dev_halyna.monthly_category_summary;
 ```
 
 Expected result after one successful run:
@@ -318,8 +323,8 @@ monthly_category_summary: 20 rows
 To inspect data:
 
 ```sql
-SELECT _ FROM dev_halyna.budget_transactions LIMIT 10;
-SELECT _ FROM dev_halyna.monthly_category_summary LIMIT 10;
+SELECT * FROM dev_halyna.budget_transactions LIMIT 10;
+SELECT * FROM dev_halyna.monthly_category_summary LIMIT 10;
 ```
 
 ## Verify Blob Storage results
@@ -341,23 +346,3 @@ budget/cleaned/YYYY-MM-DD_HHMMSS_cleaned_budget_transactions.csv
 budget/summary/YYYY-MM-DD_HHMMSS_monthly_category_summary.csv
 
 The cleaned and summary files were verified in Azure Blob Storage after a successful Docker run.
-
-## Current project status
-
-Implemented:
-
-- messy family budget CSV input;
-- pandas cleaning;
-- Pydantic validation;
-- UAH to EUR conversion;
-- monthly category summary;
-- local CSV output;
-- Postgres storage;
-- Blob Storage upload;
-- optional Blob input mode;
-- Docker image build;
-- Docker container run with .env;
-- Azure Container Registry image push;
-- Azure Container App Job setup;
-- manual job execution verification;
-- pytest model tests.
