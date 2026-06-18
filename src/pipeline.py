@@ -169,7 +169,7 @@ def clean_date(value):
     raise ValueError(f"invalid date: {value}")
 
 
-def fetch_data() -> list[dict]:
+def fetch_data() -> pd.DataFrame:
     """Read messy family budget data from a CSV file or Azure Blob.."""
     input_mode = os.getenv("INPUT_MODE", "local").lower()
 
@@ -376,10 +376,10 @@ def run():
 
 
 if __name__ == "__main__":
-    # Fail fast if required env vars are missing
-    for var in ["POSTGRES_URL", "AZURE_STORAGE_CONNECTION_STRING"]:
-        if var not in os.environ:
-            log.error("Missing required environment variable: %s", var)
-            sys.exit(1)
+    if env_flag("SAVE_TO_AZURE"):
+        for var in ["POSTGRES_URL", "AZURE_STORAGE_CONNECTION_STRING"]:
+            if var not in os.environ:
+                log.error("Missing required environment variable: %s", var)
+                sys.exit(1)
 
     run()
